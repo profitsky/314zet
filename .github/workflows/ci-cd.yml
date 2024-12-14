@@ -11,15 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: 314zet-web:latest
+      - name: Build Docker image
+        run: docker build -t 314zet-web .
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
@@ -28,10 +21,11 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            cd /var/www/[nazwa_projektu]
+            docker build -t 314zet-web .
             docker stop 314zet-web-container || true
             docker rm 314zet-web-container || true
-            docker rmi 314zet-web:latest || true
             docker run -d \
               -p 80:80 \
               --name 314zet-web-container \
-              314zet-web:latest
+              314zet-web
