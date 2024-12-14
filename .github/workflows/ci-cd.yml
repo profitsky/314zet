@@ -1,159 +1,37 @@
-name: Comprehensive CI/CD Pipeline
+name: Deploy to VPS
 
-# Triggery dla PR i push do głównych gałęzi
 on:
-  pull_request:
-    branches:
-      - main
-      - develop
   push:
-    branches:
-      - main
-      - develop
-
-# Uprawnienia dla workflow
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
+    branches: [ "main" ]
 
 jobs:
-  # Statyczna analiza kodu
-  lint-and-typecheck:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
         with:
-          node-version: 22
-          cache: 'pnpm'
+          context: .
+          push: true
+          tags: 314zet-web:latest
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
         with:
-          version: latest
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Lint Code
-        run: pnpm run lint
-
-      - name: TypeCheck
-        run: pnpm run typecheck
-
-  # Testy jednostkowe i integracyjne
-  test:
-    needs: lint-and-typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: latest
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Run Tests
-        run: pnpm run test
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  # Budowanie i weryfikacja
-  build:
-    needs:
-      - lint-and-typecheck
-      - test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: latest
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build Project
-        run: pnpm run build
-
-      - name: Archive build
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifact
-          path: .next
-
-  # Deployment na staging
-  deploy-staging:
-    if: github.event_name == 'pull_request'
-    needs:
-      - lint-and-typecheck
-      - test
-      - build
-    runs-on: ubuntu-latest
-    environment:
-      name: staging
-      url: https://staging.yourdomain.com
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Staging
-        run: |
-          echo "Deploying to staging environment"
-          # Tutaj dodaj swoje kroki deploymentu na staging
-
-  # Deployment na produkcję
-  deploy-production:
-    if: github.ref == 'refs/heads/main'
-    needs:
-      - lint-and-typecheck
-      - test
-      - build
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://yourdomain.com
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Production
-        run: |
-          echo "Deploying to production environment"
-          # Tutaj dodaj swoje kroki deploymentu na produkcję
-
-  # Powiadomienia i podsumowanie
-  pr-validation:
-    if: github.event_name == 'pull_request'
-    needs:
-      - lint-and-typecheck
-      - test
-      - build
-    runs-on: ubuntu-latest
-    steps:
-      - name: PR Validation Status
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ PR Validation Passed! Ready for review.'
-            })
+            docker stop 314zet-web-container || true
+            docker rm 314zet-web-container || true
+            docker rmi 314zet-web:latest || true
+            docker run -d \
+              -p 80:80 \
+              --name 314zet-web-container \
+              314zet-web:latest
